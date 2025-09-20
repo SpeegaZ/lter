@@ -79,21 +79,24 @@ int main()
     // pressing 'q' quits
     while (1)
     {
-	char c = '\0';
-	if (read(STDIN_FILENO, &c, 1) == -1 && errno != EAGAIN)
-	    die("read");
-	// checks if 'c' is ctrl chars
-	if(iscntrl(c))
-	{
-	    printf("%d\n", c);
+		char c = '\0';
+
+		if (read(STDIN_FILENO, &c, 1) == -1 && errno != EAGAIN)
+	    	die("read");
+
+		// checks if 'c' is ctrl chars
+		if(iscntrl(c))
+		{
+	    	printf("%d\n", c);
+		}
+		// prints ASCII codes and char
+		else
+		{
+	    	printf("%d ('%c')\r\n", c, c);
+		}
+
+		if ( c == 'q') break;
 	}
-	// prints ASCII codes and char
-	else
-	{
-	    printf("%d ('%c')\r\n", c, c);
-	}
-	if ( c == 'q') break;
-    }
 
     return 0;
 }
