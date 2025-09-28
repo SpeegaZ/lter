@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <ctype.h>
 #include <errno.h>
 #include <termios.h>
@@ -95,6 +96,33 @@ char editorReadKey()
 	return c;
 }
 
+
+int getCursorPosition(int *rows, int *cols) 
+{
+	char buf[32]; 
+	unsigned int i = 0;
+
+	// n is used for status info
+	// 6 is to get the cursor position
+	if (write(STDOUT_FILENO, "\x1b[6n", 4) != 4) return -1;
+
+	while (i < sizeof(buf) - 1)
+	{
+		if (read(STDIN_FILENO, &buf[i], 1) != 1) break;
+		if (buf[i] == 'R') break;
+		i++;
+	}
+	buf[i] = '\0';
+
+	printf("\r\nbuf[1]: '%s'\r\n", &buf[1]);
+
+	if (buf[0] != '\x1b' || buf[1] != '[') return -1;
+	if (sscanf(&buf[2], "%d;%d", rows, cols) != 2) return -1;
+
+	return 0;
+}
+
+
 // Gets the window size
 int getWindowSize(int *rows, int *cols)
 {
@@ -103,7 +131,8 @@ int getWindowSize(int *rows, int *cols)
 	// Uses TIOCGWINSZ request (Terminal Input/Output/Control Get WINdow SiZe)
 	if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0)
 	{
-		return -1;
+		if (write(STDOUT_FILENO, "\x1b[999C\x1b[999B", 12) != 12) return -1;
+		return getCursorPosition(rows, cols);
 	}
 	else
 	{
@@ -114,34 +143,67 @@ int getWindowSize(int *rows, int *cols)
 }
 
 
+/* ----- append buffer ----- */
+
+struct abuf {
+	char *b;
+	int len;
+};
+
+#define ABUF_INIT {NULL, 0}
+
+void abAppend(struct abuf *ab, const char *s, int len)
+{
+	char *new = realloc(ab->b, ab->len + len);
+
+	if(new == NULL) return;
+	memcpy(&new[ab->len], s, len);
+	ab->b = new;
+	ab->len += len;
+}
+
+void abFree(struct abuf *ab)
+{
+	free(ab->b);
+}
+
+
 /* ----- output ----- */
 
 // Draws the '~' thing like vim
 // Actually called tildes
-void editorDrawRows()
+void editorDrawRows(struct abuf *ab)
 {
 	int y;
 	for (y = 0; y < E.screenrows; y++)
 	{
-		write(STDOUT_FILENO, "~\r\n", 3);
+		abAppend(ab, "~", 1);
+		
+		if (y < E.screenrows - 1)
+			abAppend(ab, "\r\n", 1);
 	}
 }
 
 // Clears the screen
 void editorRefreshScreen() 
 {
+	struct abuf ab = ABUF_INIT;
+
 	// \x1b(27) is an escape character
 	// [2J -> J = erase in display 
 	// 	   -> 2 = clears the entire screen
 	// The escape sequence is of total 4 bytes
-	write(STDOUT_FILENO, "\x1b[2J", 4);
+	abAppend(&ab, "\x1b[2J", 4);
 	// [H -> H = positions the cursor
 	// 	  -> 1;1 = h;w
-	write(STDOUT_FILENO, "\x1b[H", 3);
+	abAppend(&ab, "\x1b[H", 4);
 
-	editorDrawRows();
+	editorDrawRows(&ab);
+
+	abAppend(&ab, "\x1b[H", 4);
 
 	write(STDOUT_FILENO, "\x1b[H", 3);
+	abFree(&ab);
 }
 
 
